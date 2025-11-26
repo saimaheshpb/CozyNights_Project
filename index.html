@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cozy Nights - Gather 'Round</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-black h-screen w-screen overflow-hidden flex flex-col items-center justify-between relative text-amber-100" onclick="startAudioContextOnFirstInteraction()">
+
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+    <div class="absolute inset-0 vignette z-10 w-full h-full"></div>
+    <div class="absolute inset-0 scanlines z-10 w-full h-full"></div>
+
+    <!-- Top Bar -->
+    <div class="z-20 w-full flex justify-between items-start p-4 pointer-events-auto">
+         <div class="flex flex-col gap-2">
+            <button onclick="copyInviteLink()" id="inviteBtn" class="pixel-btn bg-emerald-800 hover:bg-emerald-700 text-emerald-100 py-2 px-3 border-2 border-emerald-950 rounded-none cursor-pointer font-pixel-header text-[10px] md:text-xs text-left w-fit">
+                🔗 Invite Friends
+            </button>
+            <div id="copyFeedback" class="text-emerald-300 font-pixel-body text-sm hidden">Link copied!</div>
+         </div>
+         
+         <div class="flex gap-2">
+             <button onclick="toggleHolidayMode()" id="holidayBtn" class="pixel-btn bg-red-800 hover:bg-red-700 text-red-100 py-3 px-4 border-2 border-red-950 rounded-none cursor-pointer font-pixel-header text-xs">
+                🎄 Holiday: OFF
+            </button>
+             <button onclick="toggleAmbientMusic()" id="musicBtn" class="pixel-btn bg-stone-800 hover:bg-stone-700 text-stone-400 py-3 px-4 border-2 border-stone-600 rounded-none cursor-pointer font-pixel-header text-xs">
+                🎵 Beats: OFF
+            </button>
+         </div>
+    </div>
+
+    <!-- Header / Story Overlay -->
+    <div id="header-container" class="z-20 absolute top-24 left-1/2 transform -translate-x-1/2 text-center pointer-events-none w-full max-w-3xl px-4 fade-out-title">
+        <h1 class="retro-text font-pixel-header text-2xl md:text-5xl lg:text-6xl mb-2 tracking-wider drop-shadow-lg">
+            GATHER 'ROUND
+        </h1>
+        <p class="font-pixel-body text-xl text-amber-200/80 tracking-widest uppercase">Deep Woods Voxel Edition</p>
+    </div>
+
+    <!-- Dynamic Story Container -->
+    <div id="story-overlay" class="z-20 absolute top-32 left-1/2 transform -translate-x-1/2 text-center pointer-events-none w-full max-w-2xl px-4 hidden flex flex-col items-center gap-4">
+        <p id="story-line" class="story-overlay-text font-pixel-body text-xl md:text-2xl text-amber-100 leading-relaxed">
+            <!-- Story text goes here -->
+        </p>
+        <button onclick="stopStory()" id="stopStoryBtn" class="pointer-events-auto pixel-btn bg-red-800 text-white text-xs px-3 py-1 border-2 border-red-950 hidden">
+            ■ Stop Tale
+        </button>
+    </div>
+
+    <!-- Footer Controls -->
+    <div class="z-20 fixed bottom-4 left-4 flex gap-2 pointer-events-auto">
+        <button onclick="toggleStoryModal()" id="storyBtn" class="pixel-btn font-pixel-header text-lg md:text-xl bg-orange-700 hover:bg-orange-600 text-white w-12 h-12 md:w-14 md:h-14 border-4 border-orange-900 rounded-none cursor-pointer flex items-center justify-center" title="Tell a Tale">
+            📖
+        </button>
+        <button onclick="changeAvatar()" class="pixel-btn font-pixel-header text-lg md:text-xl bg-indigo-800 hover:bg-indigo-700 text-white w-12 h-12 md:w-14 md:h-14 border-4 border-indigo-950 rounded-none cursor-pointer flex items-center justify-center" title="Change Skin">
+            👤
+        </button>
+        <button onclick="cycleCompanion()" id="companionBtn" class="pixel-btn font-pixel-header text-lg md:text-xl bg-stone-700 hover:bg-stone-600 text-white w-12 h-12 md:w-14 md:h-14 border-4 border-stone-900 rounded-none cursor-pointer flex items-center justify-center" title="Companion">
+            🐾
+        </button>
+    </div>
+
+    <!-- Chat Toggle -->
+    <div class="z-20 fixed bottom-4 right-4 pointer-events-auto">
+        <button onclick="toggleChatPanel()" class="pixel-btn font-pixel-header text-lg md:text-xl bg-orange-800 hover:bg-orange-700 text-white w-12 h-12 md:w-14 md:h-14 border-4 border-orange-950 rounded-none cursor-pointer flex items-center justify-center relative" title="Chat">
+            💬
+            <div id="playerCountBadge" class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center border-2 border-red-800 hidden font-pixel-body">1</div>
+        </button>
+    </div>
+
+    <!-- Chat Panel -->
+    <div id="chatPanel" class="fixed right-4 bottom-20 w-11/12 md:w-96 z-40 hidden slide-in-right pointer-events-auto">
+        <div class="bg-orange-950/95 backdrop-blur-md border-4 border-orange-500 p-1 shadow-2xl h-[450px] md:h-[500px] flex flex-col">
+            <div class="flex justify-between items-center bg-stone-900 border-b-4 border-stone-800">
+                <div class="flex">
+                    <button onclick="switchTab('friends')" id="tabFriends" class="p-3 font-pixel-header text-[10px] text-white tab-active">FRIENDS</button>
+                    <button onclick="switchTab('flame')" id="tabFlame" class="p-3 font-pixel-header text-[10px] text-white tab-inactive">FLAME AI</button>
+                </div>
+                <button onclick="toggleChatPanel()" class="text-stone-500 hover:text-white font-pixel-header text-xs px-4">X</button>
+            </div>
+            <div id="viewFriends" class="flex-1 flex flex-col bg-stone-900/80 p-2 overflow-hidden">
+                <div id="multiplayerHistory" class="flex-1 overflow-y-auto pixel-scrollbar flex flex-col gap-2 p-2">
+                    <div class="text-stone-500 font-pixel-body text-center text-sm mt-4">Waiting for friends...<br>Share the invite link!</div>
+                </div>
+                <div class="flex gap-2 pt-2 border-t-2 border-stone-700">
+                    <input id="mpInput" type="text" placeholder="Say hello..." class="flex-1 bg-stone-800 border-2 border-stone-600 p-2 font-pixel-body text-lg text-amber-100 focus:outline-none focus:border-emerald-500 rounded-none" onkeydown="if(event.key === 'Enter') sendMultiplayerMessage()">
+                    <button onclick="sendMultiplayerMessage()" class="pixel-btn bg-emerald-700 hover:bg-emerald-600 text-white p-2 border-2 border-emerald-900 font-pixel-header text-[10px]">SEND</button>
+                </div>
+            </div>
+            <div id="viewFlame" class="flex-1 flex flex-col bg-stone-900/80 p-2 overflow-hidden hidden">
+                <div id="flameHistory" class="flex-1 overflow-y-auto pixel-scrollbar flex flex-col gap-2 p-2">
+                    <div class="bubble-ai p-2 max-w-[90%] font-pixel-body text-lg">I am the fire. I am warm.</div>
+                </div>
+                <div class="flex gap-2 pt-2 border-t-2 border-stone-700">
+                    <input id="aiInput" type="text" placeholder="Talk to fire..." class="flex-1 bg-stone-800 border-2 border-stone-600 p-2 font-pixel-body text-lg text-amber-100 focus:outline-none focus:border-orange-500 rounded-none" onkeydown="if(event.key === 'Enter') sendAiMessage()">
+                    <button onclick="sendAiMessage()" id="aiSendBtn" class="pixel-btn bg-orange-700 hover:bg-orange-600 text-white p-2 border-2 border-orange-900 font-pixel-header text-[10px]">SEND</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Story Modal -->
+    <div id="storyModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden pointer-events-auto">
+        <div class="bg-orange-900 border-4 border-orange-400 p-1 w-11/12 max-w-2xl shadow-2xl relative">
+            <div class="border-4 border-orange-950 bg-stone-900 p-6 flex flex-col gap-4 max-h-[80vh]">
+                <div class="flex justify-between items-center border-b-4 border-stone-800 pb-4">
+                    <h2 class="font-pixel-header text-orange-400 text-sm md:text-lg">The Storyteller</h2>
+                    <button onclick="toggleStoryModal()" class="text-stone-500 hover:text-white font-pixel-header">X</button>
+                </div>
+                <div class="flex gap-2">
+                    <input id="storyTopic" type="text" placeholder="Topic..." class="flex-1 bg-stone-800 border-2 border-stone-600 p-3 font-pixel-body text-xl text-amber-100">
+                    <button onclick="generateStory()" id="generateBtn" class="pixel-btn bg-orange-600 text-white p-3 font-pixel-header text-xs">Spin Tale</button>
+                </div>
+                <p class="text-amber-200/60 text-xs font-pixel-body">The story will play sentence by sentence.</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
