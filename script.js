@@ -21,8 +21,8 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// 2. Replace with your Gemini API Key
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+// 2. Gemini API Key is now handled by the backend (api/chat.js)
+const apiKey = null;
 
 // --- GLOBAL VARIABLES ---
 const container = document.getElementById('canvas-container');
@@ -747,7 +747,11 @@ window.sendAiMessage = async function () {
     const loadId = 'ld-' + Date.now(); hist.innerHTML += `<div id="${loadId}" class="bubble-ai p-2 loading-dots font-pixel-body">Thinking</div>`; hist.scrollTop = hist.scrollHeight;
     try {
         const prompt = `You are a magical campfire. User says: "${txt}". Reply shortly. If asked to change fire color, reply with [COLOR: #hexcode] (e.g. [COLOR: #0000ff]). If asked to stoke, [STOKE]. If asked to dim, [DIM].`;
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+        const res = await fetch(`/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt })
+        });
         const data = await res.json();
         let ans = data.candidates?.[0]?.content?.parts?.[0]?.text || "...";
 
@@ -787,7 +791,11 @@ window.generateStory = async function () {
     const prompt = `Write a very short, cozy campfire story about ${topic}. Under 100 words. Divide it into short sentences. No title.`;
 
     try {
-        const txtResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+        const txtResponse = await fetch(`/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt })
+        });
         const txtData = await txtResponse.json(); const text = txtData.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!text) throw new Error("No text generated");
@@ -813,10 +821,10 @@ async function playStorySequentially(sentences, index) {
 
     try {
         initAudio();
-        const audioResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+        const audioResponse = await fetch(`/api/tts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: sentences[index] }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Fenrir" } } } } })
+            body: JSON.stringify({ text: sentences[index] })
         });
         const audioData = await audioResponse.json();
         const audioContent = audioData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
