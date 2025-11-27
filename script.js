@@ -741,7 +741,6 @@ function playChillNote(f) { const t = audioContext.currentTime; const osc = audi
 
 // --- AI ---
 window.sendAiMessage = async function () {
-    if (!apiKey) { alert("Please add your Gemini API key in script.js"); return; }
     const input = document.getElementById('aiInput'); const txt = input.value; if (!txt) return;
     const hist = document.getElementById('flameHistory'); hist.innerHTML += `<div class="bubble-user p-2 max-w-[90%] font-pixel-body text-lg">${txt}</div>`; input.value = '';
     const loadId = 'ld-' + Date.now(); hist.innerHTML += `<div id="${loadId}" class="bubble-ai p-2 loading-dots font-pixel-body">Thinking</div>`; hist.scrollTop = hist.scrollHeight;
@@ -779,7 +778,6 @@ window.sendAiMessage = async function () {
 }
 
 window.generateStory = async function () {
-    if (!apiKey) { alert("Please add your Gemini API key in script.js"); return; }
     document.getElementById('storyModal').classList.add('hidden');
     const overlay = document.getElementById('story-overlay');
     const lineEl = document.getElementById('story-line');
@@ -868,6 +866,26 @@ window.stopStory = function () {
     location.reload();
 }
 
+// --- Multiplayer ---
+window.sendMultiplayerMessage = async function () {
+    if (!db || !myUser) return;
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    const msgsRef = collection(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/messages`);
+    await addDoc(msgsRef, {
+        uid: myUser.uid,
+        text: text,
+        avatarType: myAvatar.type,
+        timestamp: serverTimestamp()
+    });
+    input.value = '';
+}
+
 // Run Init
+document.addEventListener('click', window.startAudioContextOnFirstInteraction, { once: true });
+document.addEventListener('keydown', window.startAudioContextOnFirstInteraction, { once: true });
+
 initServices();
 init3D();
