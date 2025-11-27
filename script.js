@@ -690,7 +690,7 @@ window.startAudioContextOnFirstInteraction = function () {
             if (!isMusicPlaying) window.toggleAmbientMusic();
         });
     } else if (!audioContext) {
-        // Optionally init here if desired
+        window.toggleAmbientMusic();
     }
 }
 
@@ -869,7 +869,7 @@ window.stopStory = function () {
 // --- Multiplayer ---
 window.sendMultiplayerMessage = async function () {
     if (!db || !myUser) return;
-    const input = document.getElementById('chatInput');
+    const input = document.getElementById('mpInput');
     const text = input.value.trim();
     if (!text) return;
 
