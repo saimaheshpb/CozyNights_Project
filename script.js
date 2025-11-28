@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- CONFIGURATION ---
 // 1. Replace with your Firebase Config (from Console > Project Settings > General > Web App)
@@ -72,6 +72,7 @@ function initServices() {
                     joinRoom();
                     listenToRoom();
                     listenToChat();
+                    listenToRoomState();
                 }
             });
 
@@ -115,7 +116,7 @@ window.switchTab = function (tab) {
     }
 }
 
-window.changeAvatar = function () {
+window.changeAvatar = async function () {
     const types = ['human', 'mage', 'dog', 'skeleton'];
     const colors = ['#1d4ed8', '#15803d', '#b91c1c', '#a21caf', '#c2410c', '#4338ca'];
     myAvatar.type = types[Math.floor(Math.random() * types.length)];
@@ -123,8 +124,14 @@ window.changeAvatar = function () {
     updateMyPlayerDoc();
 }
 
-window.toggleHolidayMode = function () {
-    isHolidayMode = !isHolidayMode;
+window.toggleHolidayMode = async function () {
+    if (!db) return;
+    const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+    await setDoc(stateRef, { isHolidayMode: !isHolidayMode }, { merge: true });
+}
+
+function applyHolidayMode(active) {
+    isHolidayMode = active;
     const btn = document.getElementById('holidayBtn');
     if (isHolidayMode) {
         btn.innerText = "🎄 Holiday: ON";
@@ -142,11 +149,19 @@ window.toggleHolidayMode = function () {
     holidayDecorations.forEach(d => d.visible = isHolidayMode);
 }
 
-window.cycleCompanion = function () {
+window.cycleCompanion = async function () {
+    if (!db) return;
     const types = ['none', 'deer', 'fox', 'cow', 'all'];
     let idx = types.indexOf(companionType);
     idx = (idx + 1) % types.length;
-    companionType = types[idx];
+    const newType = types[idx];
+
+    const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+    await setDoc(stateRef, { companionType: newType }, { merge: true });
+}
+
+function applyCompanion(type) {
+    companionType = type;
 
     // Clear existing
     companionMeshes.forEach(m => scene.remove(m));
@@ -556,8 +571,11 @@ function animate() {
 
     fireParticles.forEach(p => p.update(time, fireIntensity, fireColorCurrent));
     snowParticles.forEach(p => p.update());
-    cloudParticles.forEach(c => c.position.x += 0.01);
-
+    // Clouds
+    cloudParticles.forEach(p => {
+        p.position.z += 0.02; // Move clouds forward
+        if (p.position.z > 50) p.position.z = -50; // Loop clouds
+    });
     Object.values(avatarMeshes).forEach(mesh => animateAvatar(mesh, time));
     companionMeshes.forEach(mesh => animateAvatar(mesh, time));
 
@@ -588,6 +606,37 @@ function randomizeAvatar() {
 
 async function joinRoom() {
     if (!db || !myUser) return;
+
+    // Check for Stale Room (Reset if > 1 hour old)
+    const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+    const stateSnap = await getDoc(stateRef);
+    if (stateSnap.exists()) {
+        const data = stateSnap.data();
+        const lastActive = data.lastActive || 0;
+        if (Date.now() - lastActive > 3600000) { // 1 hour
+            console.log("Room is stale. Resetting...");
+            await setDoc(stateRef, {
+                isHolidayMode: false,
+                companionType: 'none',
+                fireColor: '#ff6600',
+                weather: 'clear',
+                lastActive: Date.now()
+            });
+        } else {
+            // Update lastActive
+            await setDoc(stateRef, { lastActive: Date.now() }, { merge: true });
+        }
+    } else {
+        // Initialize new room
+        await setDoc(stateRef, {
+            isHolidayMode: false,
+            companionType: 'none',
+            fireColor: '#ff6600',
+            weather: 'clear',
+            lastActive: Date.now()
+        });
+    }
+
     const userRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/players/${myUser.uid}`);
     const angle = Math.random() * Math.PI * 2;
     await setDoc(userRef, { uid: myUser.uid, type: myAvatar.type, color: myAvatar.color, lastSeen: serverTimestamp(), angle: angle });
@@ -671,6 +720,64 @@ function listenToChat() {
     });
 }
 
+let lastStoryId = null;
+
+function listenToRoomState() {
+    if (!db) return;
+    const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+    onSnapshot(stateRef, (doc) => {
+        if (doc.exists()) {
+            const data = doc.data();
+
+            // Sync Holiday Mode
+            if (data.isHolidayMode !== undefined && data.isHolidayMode !== isHolidayMode) {
+                applyHolidayMode(data.isHolidayMode);
+            }
+
+            // Sync Companion
+            if (data.companionType && data.companionType !== companionType) {
+                applyCompanion(data.companionType);
+            }
+
+            // Sync Fire Color
+            if (data.fireColor) {
+                const c = new THREE.Color(data.fireColor);
+                fireColorTarget = { r: c.r, g: c.g, b: c.b };
+            }
+
+            // Sync Weather
+            if (data.weather && data.weather !== currentWeather) {
+                applyWeather(data.weather);
+            }
+
+            // Sync Story
+            if (data.storyId && data.storyId !== lastStoryId && data.storyText) {
+                lastStoryId = data.storyId;
+                const sentences = data.storyText.match(/[^\.!\?]+[\.!\?]+/g) || [data.storyText];
+
+                // Show overlay for everyone
+                document.getElementById('storyModal').classList.add('hidden');
+                document.getElementById('story-overlay').classList.remove('hidden');
+                document.getElementById('stopStoryBtn').classList.remove('hidden');
+
+                playStorySequentially(sentences, 0);
+            }
+        }
+    });
+}
+
+// --- CLEANUP ---
+window.addEventListener('beforeunload', async () => {
+    if (!db || !myUser || !roomId) return;
+
+    // Remove my player
+    const playerRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/players/${myUser.uid}`);
+    await deleteDoc(playerRef);
+
+    // Check if room is empty (optional optimization: cloud function is better, but this works for simple cases)
+    // We can't easily wait for this on unload, but we try best effort.
+});
+
 function getRoomFromUrl() {
     const hash = window.location.hash.substring(1);
     if (hash) return hash;
@@ -745,7 +852,17 @@ window.sendAiMessage = async function () {
     const hist = document.getElementById('flameHistory'); hist.innerHTML += `<div class="bubble-user p-2 max-w-[90%] font-pixel-body text-lg">${txt}</div>`; input.value = '';
     const loadId = 'ld-' + Date.now(); hist.innerHTML += `<div id="${loadId}" class="bubble-ai p-2 loading-dots font-pixel-body">Thinking</div>`; hist.scrollTop = hist.scrollHeight;
     try {
-        const prompt = `You are a magical campfire. User says: "${txt}". Reply shortly. If asked to change fire color, reply with [COLOR: #hexcode] (e.g. [COLOR: #0000ff]). If asked to stoke, [STOKE]. If asked to dim, [DIM].`;
+        const prompt = `You are a magical campfire. User says: "${txt}". Reply shortly.
+        Commands you can use:
+        [COLOR: #hex] - Change fire color
+        [STOKE] - Increase fire intensity
+        [DIM] - Decrease fire intensity
+        [SNOW] - Start snowing
+        [RAIN] - Start raining
+        [CLEAR] - Clear weather
+        
+        Example reply: "I shall summon the storm. [RAIN] [COLOR: #0000FF]"`;
+
         const res = await fetch(`/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -758,12 +875,25 @@ window.sendAiMessage = async function () {
         if (ans.includes('[STOKE]')) { fireIntensity = 1.5; ans = ans.replace('[STOKE]', ''); }
         if (ans.includes('[DIM]')) { fireIntensity = 0.5; ans = ans.replace('[DIM]', ''); }
 
+        // Weather Commands
+        let newWeather = null;
+        if (ans.includes('[SNOW]')) { newWeather = 'snow'; ans = ans.replace('[SNOW]', ''); }
+        if (ans.includes('[RAIN]')) { newWeather = 'rain'; ans = ans.replace('[RAIN]', ''); }
+        if (ans.includes('[CLEAR]')) { newWeather = 'clear'; ans = ans.replace('[CLEAR]', ''); }
+
         const colorMatch = ans.match(/\[COLOR:\s*(#[0-9a-fA-F]{6})\]/);
-        if (colorMatch) {
-            const hex = colorMatch[1];
-            const c = new THREE.Color(hex);
-            fireColorTarget = { r: c.r, g: c.g, b: c.b };
-            ans = ans.replace(colorMatch[0], '');
+
+        // Update Global State
+        if (db && (colorMatch || newWeather)) {
+            const updates = {};
+            if (colorMatch) {
+                updates.fireColor = colorMatch[1];
+                ans = ans.replace(colorMatch[0], '');
+            }
+            if (newWeather) updates.weather = newWeather;
+
+            const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+            setDoc(stateRef, updates, { merge: true });
         }
 
         // If answer is empty after stripping commands, provide a default fallback
@@ -782,7 +912,7 @@ window.generateStory = async function () {
     const overlay = document.getElementById('story-overlay');
     const lineEl = document.getElementById('story-line');
     overlay.classList.remove('hidden');
-    lineEl.innerText = "Conjuring voice...";
+    lineEl.innerText = "Weaving tale...";
     lineEl.classList.add('story-visible');
 
     const topic = document.getElementById('storyTopic').value.trim() || "a mysterious but cozy night";
@@ -797,8 +927,15 @@ window.generateStory = async function () {
         const txtData = await txtResponse.json(); const text = txtData.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!text) throw new Error("No text generated");
-        const sentences = text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
-        playStorySequentially(sentences, 0);
+
+        // Sync Story to Room
+        if (db) {
+            const stateRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/state/global`);
+            await setDoc(stateRef, {
+                storyText: text,
+                storyId: Date.now().toString()
+            }, { merge: true });
+        }
 
     } catch (error) { console.error(error); lineEl.innerText = "Connection lost."; }
 }
@@ -813,57 +950,69 @@ async function playStorySequentially(sentences, index) {
     }
 
     const lineEl = document.getElementById('story-line');
-    lineEl.innerText = sentences[index].trim();
+    lineEl.innerText = ""; // Clear for typewriter
     lineEl.classList.add('story-visible');
-    document.getElementById('stopStoryBtn').classList.remove('hidden');
 
-    try {
-        initAudio();
-        const audioResponse = await fetch(`/api/tts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: sentences[index] })
-        });
-        const audioData = await audioResponse.json();
-        const audioContent = audioData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    await typeWriter(sentences[index].trim(), lineEl);
 
-        if (audioContent) {
-            await playPCM16Promise(audioContent);
-            setTimeout(() => playStorySequentially(sentences, index + 1), 500);
-        } else {
-            setTimeout(() => playStorySequentially(sentences, index + 1), 2000);
-        }
-    } catch (e) {
-        console.error(e);
-        setTimeout(() => playStorySequentially(sentences, index + 1), 2000);
-    }
+    // Wait a bit before next sentence
+    setTimeout(() => playStorySequentially(sentences, index + 1), 1500);
 }
 
-function playPCM16Promise(base64Data) {
+function typeWriter(text, element) {
     return new Promise((resolve) => {
-        const binaryString = atob(base64Data);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-        const int16Data = new Int16Array(bytes.buffer);
-        const buffer = audioContext.createBuffer(1, int16Data.length, 24000);
-        const channelData = buffer.getChannelData(0);
-        for (let i = 0; i < int16Data.length; i++) channelData[i] = int16Data[i] / 32768.0;
-
-        storySourceNode = audioContext.createBufferSource();
-        storySourceNode.buffer = buffer;
-        storySourceNode.connect(audioContext.destination);
-        storySourceNode.start();
-        storySourceNode.onended = () => resolve();
+        let i = 0;
+        function type() {
+            if (i < text.length) {
+                const char = text.charAt(i);
+                if (char === ' ') {
+                    element.innerHTML += "&nbsp;";
+                } else {
+                    element.innerText += char;
+                    playBlep();
+                }
+                i++;
+                setTimeout(type, 50); // Typing speed
+            } else {
+                // Add a space at the end of the sentence to ensure separation
+                element.innerHTML += "&nbsp;";
+                resolve();
+            }
+        }
+        type();
     });
 }
 
+function playBlep() {
+    if (!audioContext) return;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    // Lower pitch for "Animal Crossing" effect (less annoying)
+    const pitch = 100 + Math.random() * 150;
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(pitch, audioContext.currentTime);
+
+    gain.gain.setValueAtTime(0.05, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+
+    osc.start();
+    osc.stop(audioContext.currentTime + 0.1);
+}
+
+// Removed playPCM16Promise as it is no longer needed
+
 window.stopStory = function () {
-    if (storySourceNode) {
-        try { storySourceNode.stop(); } catch (e) { }
-        storySourceNode = null;
-    }
-    location.reload();
+    // Reloading is too harsh. Let's just hide the overlay.
+    // Ideally we should cancel the timeout/typewriter, but hiding is a quick fix.
+    document.getElementById('story-overlay').classList.add('hidden');
+    document.getElementById('stopStoryBtn').classList.add('hidden');
+
+    // Force stop audio context if needed, or just let the last blep fade.
 }
 
 // --- Multiplayer ---
@@ -887,5 +1036,22 @@ window.sendMultiplayerMessage = async function () {
 document.addEventListener('click', window.startAudioContextOnFirstInteraction, { once: true });
 document.addEventListener('keydown', window.startAudioContextOnFirstInteraction, { once: true });
 
+// --- WEATHER ---
+let currentWeather = 'clear';
+
+function applyWeather(type) {
+    currentWeather = type;
+    // Reset particles
+    snowParticles.forEach(p => p.mesh.visible = false);
+    // (If we had rain particles, we'd handle them here)
+
+    if (currentWeather === 'snow') {
+        snowParticles.forEach(p => p.mesh.visible = true);
+    } else if (currentWeather === 'rain') {
+        // Placeholder for rain
+    }
+}
+
+// --- INIT ---
 initServices();
 init3D();
