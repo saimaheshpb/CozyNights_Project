@@ -517,8 +517,8 @@ function createAvatarMesh(type, colorHex) {
         box(0.4, 0.4, 0.5, matWood, 0, 0, 0, headGroup);
         box(0.1, 0.1, 0.1, matDark, 0, -0.1, 0.26, headGroup);
         // Eyes
-        box(0.08, 0.08, 0.05, matDark, 0.12, 0.15, 0.26, headGroup);
-        box(0.08, 0.08, 0.05, matDark, -0.12, 0.15, 0.26, headGroup);
+        const leftEye = box(0.08, 0.08, 0.05, matDark, 0.12, 0.15, 0.26, headGroup);
+        const rightEye = box(0.08, 0.08, 0.05, matDark, -0.12, 0.15, 0.26, headGroup);
         const antler = (xDir) => {
             const a = new THREE.Group();
             box(0.05, 0.6, 0.05, matBone, 0, 0.3, 0, a);
@@ -531,14 +531,15 @@ function createAvatarMesh(type, colorHex) {
         headGroup.position.set(0, 0.9, 0.4); group.add(headGroup);
         box(0.15, 0.5, 0.15, matWood, -0.2, 0, 0.3).rotation.x = -Math.PI / 6;
         box(0.15, 0.5, 0.15, matWood, 0.2, 0, 0.3).rotation.x = -Math.PI / 6;
+        group.userData.eyes = [leftEye, rightEye];
     } else if (type === 'fox') {
         box(0.5, 0.4, 0.9, matOrange, 0, 0.2, 0);
         box(0.4, 0.4, 0.5, matOrange, 0, 0, 0, headGroup);
         box(0.2, 0.15, 0.2, matWhite, 0, -0.15, 0.3, headGroup);
         box(0.1, 0.1, 0.1, matDark, 0, -0.1, 0.4, headGroup);
         // Eyes
-        box(0.08, 0.08, 0.05, matDark, 0.1, 0.1, 0.26, headGroup);
-        box(0.08, 0.08, 0.05, matDark, -0.1, 0.1, 0.26, headGroup);
+        const leftEye = box(0.08, 0.08, 0.05, matDark, 0.1, 0.1, 0.26, headGroup);
+        const rightEye = box(0.08, 0.08, 0.05, matDark, -0.1, 0.1, 0.26, headGroup);
         headGroup.position.set(0, 0.6, 0.4); group.add(headGroup);
         const tailGroup = new THREE.Group();
         box(0.5, 0.5, 0.7, matOrange, 0, 0, 0, tailGroup);
@@ -548,6 +549,7 @@ function createAvatarMesh(type, colorHex) {
         group.userData.tail = tailGroup;
         group.add(tailGroup);
         group.userData.isDog = true;
+        group.userData.eyes = [leftEye, rightEye];
     } else if (type === 'cow') {
         box(0.8, 0.7, 1.2, matCow, 0, 0.35, 0);
         box(0.4, 0.4, 0.4, matSpot, 0.1, 0.4, 0.2);
@@ -643,21 +645,33 @@ function updateLabels() {
         moveLabel(uid, mesh, mesh.userData.name || "Traveler", false);
     });
 
-    // Update companion labels (only cow Zzz)
+    // Update companion labels (Zzz for sleeping ONLY)
     companionMeshes.forEach((mesh, idx) => {
-        if (mesh.userData.type === 'cow') {
-            moveLabel(`companion-${idx}`, mesh, "", mesh.userData.isSleeping);
+        const animalType = mesh.userData.type;
+        const labelId = `companion-${idx}`;
+
+        if (animalType === 'cow' || animalType === 'deer' || animalType === 'fox') {
+            if (mesh.userData.isSleeping) {
+                // Only show Zzz when sleeping
+                moveLabel(labelId, mesh, "", true);
+            } else {
+                // Remove Zzz label when awake
+                const el = document.getElementById(`label-${labelId}`);
+                if (el) el.remove();
+            }
         }
     });
 }
 
 function animateAvatar(mesh, time) {
-    // Sleeping Cow Logic
-    if (mesh.userData.type === 'cow') {
+    // Sleeping Logic for Companions
+    const animalType = mesh.userData.type;
+    if (animalType === 'cow' || animalType === 'deer' || animalType === 'fox') {
         if (mesh.userData.nextSleepCheck === undefined) {
-            // Initialize: Start asleep
+            // Initialize: Start asleep with random offset for personality
             mesh.userData.isSleeping = true;
-            mesh.userData.nextSleepCheck = time + 60; // Wake after 1 min
+            const randomOffset = Math.random() * 30; // 0-30 second offset
+            mesh.userData.nextSleepCheck = time + 60 + randomOffset; // Wake after 1 min + offset
         }
 
         if (time > mesh.userData.nextSleepCheck) {
@@ -666,8 +680,9 @@ function animateAvatar(mesh, time) {
         }
 
         if (mesh.userData.isSleeping) {
-            // Breathing animation
-            mesh.scale.y = 1.3 + Math.sin(time * 2) * 0.05;
+            // Breathing animation (adjust scale based on type)
+            const baseScale = animalType === 'cow' ? 1.3 : 1.0;
+            mesh.scale.y = baseScale + Math.sin(time * 2) * 0.05;
 
             // Close eyes
             if (mesh.userData.eyes) {
@@ -681,7 +696,9 @@ function animateAvatar(mesh, time) {
 
             return; // Don't do other animations
         } else {
-            mesh.scale.y = 1.3; // Reset scale
+            // Reset scale (adjust based on type)
+            const baseScale = animalType === 'cow' ? 1.3 : 1.0;
+            mesh.scale.y = baseScale;
 
             // Open eyes
             if (mesh.userData.eyes) {
