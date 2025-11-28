@@ -33,6 +33,7 @@ let companionMeshes = [];
 
 // State
 let myUser = null;
+let myName = "Traveler";
 let myAvatar = { type: 'human', color: '#1d4ed8' };
 let roomId = 'lobby';
 let otherPlayers = {};
@@ -69,10 +70,7 @@ function initServices() {
                 if (user) {
                     myUser = user;
                     randomizeAvatar();
-                    joinRoom();
-                    listenToRoom();
-                    listenToChat();
-                    listenToRoomState();
+                    // Don't auto-join, wait for name
                 }
             });
 
@@ -91,6 +89,19 @@ function initServices() {
 window.toggleChatPanel = function () {
     const panel = document.getElementById('chatPanel');
     panel.classList.toggle('hidden');
+}
+
+window.submitName = function () {
+    const input = document.getElementById('nameInput');
+    const name = input.value.trim();
+    if (name) {
+        myName = name;
+        document.getElementById('nameModal').classList.add('hidden');
+        joinRoom();
+        listenToRoom();
+        listenToChat();
+        listenToRoomState();
+    }
 }
 
 window.toggleStoryModal = function () {
@@ -170,18 +181,22 @@ function applyCompanion(type) {
     if (companionType === 'all') {
         const deer = createAvatarMesh('deer', '#8d6e63');
         deer.position.set(3.5, 0, 0); deer.lookAt(0, 0, 0);
+        deer.userData.type = 'deer';
         scene.add(deer); companionMeshes.push(deer);
 
         const fox = createAvatarMesh('fox', '#8d6e63');
         fox.position.set(-3.5, 0, 0); fox.lookAt(0, 0, 0);
+        fox.userData.type = 'fox';
         scene.add(fox); companionMeshes.push(fox);
 
         const cow = createAvatarMesh('cow', '#8d6e63');
         cow.position.set(0, 0, -3.5); cow.lookAt(0, 0, 0);
+        cow.userData.type = 'cow';
         scene.add(cow); companionMeshes.push(cow);
     } else if (companionType !== 'none') {
         const m = createAvatarMesh(companionType, '#8d6e63');
         m.position.set(3.5, 0, 0); m.lookAt(0, 0, 0);
+        m.userData.type = companionType;
         scene.add(m);
         companionMeshes.push(m);
     }
@@ -538,13 +553,15 @@ function createAvatarMesh(type, colorHex) {
         box(0.4, 0.4, 0.4, matSpot, 0.1, 0.4, 0.2);
         box(0.3, 0.3, 0.3, matSpot, -0.2, 0.5, -0.3);
         box(0.6, 0.6, 0.7, matCow, 0, 0, 0, headGroup);
-        box(0.1, 0.1, 0.05, matDark, 0.2, 0.1, 0.36, headGroup);
-        box(0.1, 0.1, 0.05, matDark, -0.2, 0.1, 0.36, headGroup);
+        const leftEye = box(0.1, 0.1, 0.05, matDark, 0.2, 0.1, 0.36, headGroup);
+        const rightEye = box(0.1, 0.1, 0.05, matDark, -0.2, 0.1, 0.36, headGroup);
         box(0.1, 0.2, 0.1, matBone, 0.25, 0.3, 0, headGroup);
         box(0.1, 0.2, 0.1, matBone, -0.25, 0.3, 0, headGroup);
         headGroup.position.set(0, 0.9, 0.5); group.add(headGroup);
         box(0.2, 0.5, 0.2, matCow, -0.3, 0, 0.4).rotation.x = -Math.PI / 2;
         box(0.2, 0.5, 0.2, matCow, 0.3, 0, 0.4).rotation.x = -Math.PI / 2;
+        // Store eyes for sleeping animation
+        group.userData.eyes = [leftEye, rightEye];
     } else {
         box(0.8, 0.8, 0.4, matBody, 0, 0.7, 0);
         box(0.6, 0.6, 0.6, matSkin, 0, 0, 0, headGroup);
@@ -579,10 +596,105 @@ function animate() {
     Object.values(avatarMeshes).forEach(mesh => animateAvatar(mesh, time));
     companionMeshes.forEach(mesh => animateAvatar(mesh, time));
 
+    updateLabels();
+
     renderer.render(scene, camera);
 }
 
+function updateLabels() {
+    const container = document.getElementById('labels-container');
+
+    // Helper to move label
+    const moveLabel = (uid, mesh, text, isSleeping) => {
+        if (!mesh) return;
+        const pos = mesh.position.clone();
+        pos.y += 1.5; // Above head
+        pos.project(camera);
+
+        const x = (pos.x * .5 + .5) * container.clientWidth;
+        const y = (pos.y * -.5 + .5) * container.clientHeight;
+
+        let el = document.getElementById(`label-${uid}`);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = `label-${uid}`;
+            el.className = "absolute text-white font-pixel-body text-sm text-center drop-shadow-md whitespace-nowrap transition-opacity duration-300";
+            container.appendChild(el);
+        }
+
+        // Hide if behind camera
+        if (pos.z > 1) {
+            el.style.opacity = 0;
+        } else {
+            el.style.opacity = 1;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.style.transform = 'translate(-50%, -50%)';
+
+            let content = text;
+            if (isSleeping) content += ' <span class="text-blue-300 text-xl font-bold animate-pulse">Zzz...</span>';
+            el.innerHTML = content;
+        }
+    };
+
+    // Update player labels
+    Object.keys(avatarMeshes).forEach(uid => {
+        const mesh = avatarMeshes[uid];
+        moveLabel(uid, mesh, mesh.userData.name || "Traveler", false);
+    });
+
+    // Update companion labels (only cow Zzz)
+    companionMeshes.forEach((mesh, idx) => {
+        if (mesh.userData.type === 'cow') {
+            moveLabel(`companion-${idx}`, mesh, "", mesh.userData.isSleeping);
+        }
+    });
+}
+
 function animateAvatar(mesh, time) {
+    // Sleeping Cow Logic
+    if (mesh.userData.type === 'cow') {
+        if (mesh.userData.nextSleepCheck === undefined) {
+            // Initialize: Start asleep
+            mesh.userData.isSleeping = true;
+            mesh.userData.nextSleepCheck = time + 60; // Wake after 1 min
+        }
+
+        if (time > mesh.userData.nextSleepCheck) {
+            mesh.userData.isSleeping = !mesh.userData.isSleeping;
+            mesh.userData.nextSleepCheck = time + 60; // Toggle every 1 min
+        }
+
+        if (mesh.userData.isSleeping) {
+            // Breathing animation
+            mesh.scale.y = 1.3 + Math.sin(time * 2) * 0.05;
+
+            // Close eyes
+            if (mesh.userData.eyes) {
+                mesh.userData.eyes.forEach(eye => eye.scale.y = 0.1);
+            }
+
+            // Tilt head down
+            if (mesh.userData.head) {
+                mesh.userData.head.rotation.x = 0.3;
+            }
+
+            return; // Don't do other animations
+        } else {
+            mesh.scale.y = 1.3; // Reset scale
+
+            // Open eyes
+            if (mesh.userData.eyes) {
+                mesh.userData.eyes.forEach(eye => eye.scale.y = 1.0);
+            }
+
+            // Reset head
+            if (mesh.userData.head) {
+                mesh.userData.head.rotation.x = 0;
+            }
+        }
+    }
+
     mesh.position.y = Math.sin(time * 2 + mesh.id) * 0.02;
     if (mesh.userData.tail) mesh.userData.tail.rotation.y = Math.sin(time * 8) * 0.5;
     if (mesh.userData.head) {
@@ -639,14 +751,14 @@ async function joinRoom() {
 
     const userRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/players/${myUser.uid}`);
     const angle = Math.random() * Math.PI * 2;
-    await setDoc(userRef, { uid: myUser.uid, type: myAvatar.type, color: myAvatar.color, lastSeen: serverTimestamp(), angle: angle });
+    await setDoc(userRef, { uid: myUser.uid, name: myName, type: myAvatar.type, color: myAvatar.color, lastSeen: serverTimestamp(), angle: angle });
     window.addEventListener('beforeunload', () => { deleteDoc(userRef); });
 }
 
 async function updateMyPlayerDoc() {
     if (!db || !myUser) return;
     const userRef = doc(db, 'artifacts', appId, 'public', 'data', `rooms/${roomId}/players/${myUser.uid}`);
-    await setDoc(userRef, { type: myAvatar.type, color: myAvatar.color }, { merge: true });
+    await setDoc(userRef, { name: myName, type: myAvatar.type, color: myAvatar.color }, { merge: true });
 }
 
 function listenToRoom() {
@@ -677,8 +789,13 @@ function update3DScene(playersData) {
             avatarMeshes[uid] = mesh;
             avatarMeshes[uid].userData.type = p.type;
             avatarMeshes[uid].userData.color = p.color;
+            avatarMeshes[uid].userData.name = p.name || "Traveler";
         } else {
             const mesh = avatarMeshes[uid];
+            // Update name
+            if (mesh.userData.name !== p.name) {
+                mesh.userData.name = p.name || "Traveler";
+            }
             if (mesh.userData.type !== p.type || mesh.userData.color !== p.color) {
                 scene.remove(mesh);
                 const newMesh = createAvatarMesh(p.type, p.color);
@@ -688,11 +805,18 @@ function update3DScene(playersData) {
                 avatarMeshes[uid] = newMesh;
                 avatarMeshes[uid].userData.type = p.type;
                 avatarMeshes[uid].userData.color = p.color;
+                avatarMeshes[uid].userData.name = p.name || "Traveler";
             }
         }
     });
     Object.keys(avatarMeshes).forEach(uid => {
-        if (!playersData[uid]) { scene.remove(avatarMeshes[uid]); delete avatarMeshes[uid]; }
+        if (!playersData[uid]) {
+            scene.remove(avatarMeshes[uid]);
+            // Remove label
+            const el = document.getElementById(`label-${uid}`);
+            if (el) el.remove();
+            delete avatarMeshes[uid];
+        }
     });
 }
 
