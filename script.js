@@ -27,7 +27,7 @@ const apiKey = null;
 // --- GLOBAL VARIABLES ---
 const container = document.getElementById('canvas-container');
 let scene, camera, renderer, fireLight, moonLight;
-let fireParticles = [], snowParticles = [], cloudParticles = [];
+let fireParticles = [], snowParticles = [], cloudParticles = [], fireflyParticles = [], heartParticles = [];
 let avatarMeshes = {};
 let companionMeshes = [];
 
@@ -162,7 +162,7 @@ function applyHolidayMode(active) {
 
 window.cycleCompanion = async function () {
     if (!db) return;
-    const types = ['none', 'deer', 'fox', 'cow', 'all'];
+    const types = ['none', 'deer', 'fox', 'cow', 'cat', 'shiba', 'all'];
     let idx = types.indexOf(companionType);
     idx = (idx + 1) % types.length;
     const newType = types[idx];
@@ -179,20 +179,17 @@ function applyCompanion(type) {
     companionMeshes = [];
 
     if (companionType === 'all') {
-        const deer = createAvatarMesh('deer', '#8d6e63');
-        deer.position.set(3.5, 0, 0); deer.lookAt(0, 0, 0);
-        deer.userData.type = 'deer';
-        scene.add(deer); companionMeshes.push(deer);
-
-        const fox = createAvatarMesh('fox', '#8d6e63');
-        fox.position.set(-3.5, 0, 0); fox.lookAt(0, 0, 0);
-        fox.userData.type = 'fox';
-        scene.add(fox); companionMeshes.push(fox);
-
-        const cow = createAvatarMesh('cow', '#8d6e63');
-        cow.position.set(0, 0, -3.5); cow.lookAt(0, 0, 0);
-        cow.userData.type = 'cow';
-        scene.add(cow); companionMeshes.push(cow);
+        const animals = ['deer', 'fox', 'cow', 'cat', 'shiba'];
+        const radius = 4.5;
+        animals.forEach((type, i) => {
+            const angle = (i / animals.length) * Math.PI * 2;
+            const m = createAvatarMesh(type, '#8d6e63');
+            m.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
+            m.lookAt(0, 0, 0);
+            m.userData.type = type;
+            scene.add(m);
+            companionMeshes.push(m);
+        });
     } else if (companionType !== 'none') {
         const m = createAvatarMesh(companionType, '#8d6e63');
         m.position.set(3.5, 0, 0); m.lookAt(0, 0, 0);
@@ -267,7 +264,14 @@ function init3D() {
         snowParticles.push(s);
     }
 
+    // Fireflies
+    for (let i = 0; i < 150; i++) { // Increased to 150
+        const f = new FireflyParticle();
+        fireflyParticles.push(f);
+    }
+
     window.addEventListener('resize', onWindowResize, false);
+    window.addEventListener('click', onMouseClick, false); // For petting
     setupCameraControls();
 
     animate();
@@ -433,6 +437,87 @@ class SnowParticle {
     }
 }
 
+class FireflyParticle {
+    constructor() {
+        this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), new THREE.MeshBasicMaterial({ color: 0xccff00, transparent: true, opacity: 0.8 }));
+        this.reset(); scene.add(this.mesh);
+    }
+    reset() {
+        const r = 10 + Math.random() * 30;
+        const theta = Math.random() * Math.PI * 2;
+        this.mesh.position.set(r * Math.sin(theta), 1 + Math.random() * 4, r * Math.cos(theta));
+        this.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02);
+        this.phase = Math.random() * Math.PI * 2;
+    }
+    update(time) {
+        this.mesh.position.add(this.velocity);
+        this.mesh.position.y += Math.sin(time * 2 + this.phase) * 0.01;
+        // Wrap around
+        if (this.mesh.position.length() > 50) this.mesh.position.setLength(10);
+    }
+}
+
+class HeartParticle {
+    constructor(pos) {
+        const shape = new THREE.Shape();
+        const x = 0, y = 0;
+        shape.moveTo(x + 0.25, y + 0.25);
+        shape.bezierCurveTo(x + 0.25, y + 0.25, x + 0.20, y, x, y);
+        shape.bezierCurveTo(x - 0.30, y, x - 0.30, y + 0.35, x - 0.30, y + 0.35);
+        shape.bezierCurveTo(x - 0.30, y + 0.55, x - 0.10, y + 0.77, x + 0.25, y + 0.95);
+        shape.bezierCurveTo(x + 0.60, y + 0.77, x + 0.80, y + 0.55, x + 0.80, y + 0.35);
+        shape.bezierCurveTo(x + 0.80, y + 0.35, x + 0.80, y, x + 0.50, y);
+        shape.bezierCurveTo(x + 0.35, y, x + 0.25, y + 0.25, x + 0.25, y + 0.25);
+
+        const geo = new THREE.ShapeGeometry(shape);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff69b4, side: THREE.DoubleSide });
+        this.mesh = new THREE.Mesh(geo, mat);
+        this.mesh.scale.set(0.3, 0.3, 0.3);
+        this.mesh.rotation.z = Math.PI; // Flip it upright
+        this.mesh.position.copy(pos);
+        this.mesh.position.y += 1.5;
+        this.life = 1.0;
+        scene.add(this.mesh);
+    }
+    update() {
+        this.mesh.position.y += 0.03;
+        this.life -= 0.02;
+        this.mesh.scale.multiplyScalar(0.98);
+        if (this.life <= 0) {
+            this.mesh.visible = false;
+            scene.remove(this.mesh);
+            return false;
+        }
+        return true;
+    }
+}
+
+function onMouseClick(event) {
+    const mouse = new THREE.Vector2();
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(companionMeshes, true); // Recursive
+    if (intersects.length > 0) {
+        // Find the root group
+        let obj = intersects[0].object;
+        while (obj.parent && obj.parent.type !== 'Scene') {
+            obj = obj.parent;
+        }
+
+        // Trigger Petting
+        if (obj.userData.type) {
+            // Jump
+            obj.userData.jumpTime = Date.now();
+            // Heart
+            heartParticles.push(new HeartParticle(obj.position));
+        }
+    }
+}
+
 function setupCameraControls() {
     let isDragging = false;
     let pm = { x: 0, y: 0 };
@@ -562,8 +647,108 @@ function createAvatarMesh(type, colorHex) {
         headGroup.position.set(0, 0.9, 0.5); group.add(headGroup);
         box(0.2, 0.5, 0.2, matCow, -0.3, 0, 0.4).rotation.x = -Math.PI / 2;
         box(0.2, 0.5, 0.2, matCow, 0.3, 0, 0.4).rotation.x = -Math.PI / 2;
+
+        // Spots (More visible patches)
+        box(0.35, 0.35, 0.1, matSpot, 0.3, 0.5, 0.3); // Side spot right
+        box(0.25, 0.25, 0.1, matSpot, -0.3, 0.4, -0.2); // Side spot left  
+        box(0.4, 0.1, 0.4, matSpot, 0.05, 0.71, 0.1); // Top spot
+        box(0.3, 0.3, 0.1, matSpot, -0.15, 0.6, 0.5); // Front spot
+
         // Store eyes for sleeping animation
         group.userData.eyes = [leftEye, rightEye];
+    } else if (type === 'cat') {
+        // Kitty
+        const matCat = new THREE.MeshStandardMaterial({ color: 0x222222 }); // Black cat
+        const matEar = new THREE.MeshStandardMaterial({ color: 0x444444 });
+
+        box(0.4, 0.3, 0.6, matCat, 0, 0.15, 0); // Body
+        box(0.35, 0.35, 0.35, matCat, 0, 0, 0, headGroup); // Head
+
+        // Ears (Triangular - Using ConeGeometry)
+        const earGeo = new THREE.ConeGeometry(0.12, 0.25, 4);
+        const lEar = new THREE.Mesh(earGeo, matEar);
+        lEar.position.set(0.15, 0.25, 0.05);
+        lEar.rotation.z = -0.3;
+        lEar.castShadow = true;
+        headGroup.add(lEar);
+
+        const rEar = new THREE.Mesh(earGeo, matEar);
+        rEar.position.set(-0.15, 0.25, 0.05);
+        rEar.rotation.z = 0.3;
+        rEar.castShadow = true;
+        headGroup.add(rEar);
+
+        // Eyes
+        const leftEye = box(0.06, 0.06, 0.02, matGem, 0.08, 0.05, 0.18, headGroup);
+        const rightEye = box(0.06, 0.06, 0.02, matGem, -0.08, 0.05, 0.18, headGroup);
+
+        // Whiskers (3 lines per side) - Fixed orientation
+        const whisker = (x, y, rotZ) => {
+            const w = box(0.3, 0.015, 0.015, matBone, x, y, 0.18, headGroup);
+            w.rotation.z = rotZ;
+        };
+        // Right Side (Positive X) - whiskers point to the right
+        whisker(0.25, -0.02, 0.15);  // Up
+        whisker(0.25, -0.05, 0);     // Middle  
+        whisker(0.25, -0.08, -0.15); // Down
+        // Left Side (Negative X) - whiskers point to the left
+        whisker(-0.25, -0.02, -0.15); // Up
+        whisker(-0.25, -0.05, 0);     // Middle
+        whisker(-0.25, -0.08, 0.15);  // Down
+
+        headGroup.position.set(0, 0.4, 0.3); group.add(headGroup);
+
+        // Tail
+        const tail = box(0.08, 0.08, 0.5, matCat, 0, 0.2, -0.4);
+        tail.rotation.x = 0.5;
+        group.userData.tail = tail;
+        group.userData.eyes = [leftEye, rightEye];
+
+    } else if (type === 'shiba') {
+        // Shiba Inu
+        const matShiba = new THREE.MeshStandardMaterial({ color: 0xd4a373 }); // Tan
+        const matWhiteFur = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const matCollar = new THREE.MeshStandardMaterial({ color: 0xff0000 }); // Red Collar
+
+        box(0.5, 0.5, 0.8, matShiba, 0, 0.25, 0); // Body
+        box(0.45, 0.45, 0.5, matShiba, 0, 0, 0, headGroup); // Head
+
+        // Collar
+        box(0.46, 0.1, 0.46, matCollar, 0, -0.2, 0, headGroup);
+
+        // Ears (Triangular - Using ConeGeometry)
+        const earGeo = new THREE.ConeGeometry(0.13, 0.28, 4);
+        const lEar = new THREE.Mesh(earGeo, matShiba);
+        lEar.position.set(0.18, 0.28, 0.08);
+        lEar.rotation.z = -0.2;
+        lEar.castShadow = true;
+        headGroup.add(lEar);
+
+        const rEar = new THREE.Mesh(earGeo, matShiba);
+        rEar.position.set(-0.18, 0.28, 0.08);
+        rEar.rotation.z = 0.2;
+        rEar.castShadow = true;
+        headGroup.add(rEar);
+
+        // Snout (White)
+        box(0.2, 0.15, 0.15, matWhiteFur, 0, -0.1, 0.25, headGroup);
+        box(0.08, 0.08, 0.08, matDark, 0, -0.05, 0.33, headGroup); // Nose
+
+        // Eyes
+        const leftEye = box(0.06, 0.06, 0.02, matDark, 0.12, 0.05, 0.25, headGroup);
+        const rightEye = box(0.06, 0.06, 0.02, matDark, -0.12, 0.05, 0.25, headGroup);
+
+        headGroup.position.set(0, 0.6, 0.4); group.add(headGroup);
+
+        // Curly Tail
+        const tailGroup = new THREE.Group();
+        box(0.15, 0.15, 0.4, matShiba, 0, 0, 0, tailGroup);
+        tailGroup.position.set(0, 0.4, -0.4);
+        tailGroup.rotation.x = 2.0; // Curl up
+        group.add(tailGroup);
+        group.userData.tail = tailGroup;
+        group.userData.eyes = [leftEye, rightEye];
+
     } else {
         box(0.8, 0.8, 0.4, matBody, 0, 0.7, 0);
         box(0.6, 0.6, 0.6, matSkin, 0, 0, 0, headGroup);
@@ -595,6 +780,15 @@ function animate() {
         p.position.z += 0.02; // Move clouds forward
         if (p.position.z > 50) p.position.z = -50; // Loop clouds
     });
+    fireflyParticles.forEach(p => p.update(time));
+
+    // Hearts
+    for (let i = heartParticles.length - 1; i >= 0; i--) {
+        if (!heartParticles[i].update()) {
+            heartParticles.splice(i, 1);
+        }
+    }
+
     Object.values(avatarMeshes).forEach(mesh => animateAvatar(mesh, time));
     companionMeshes.forEach(mesh => animateAvatar(mesh, time));
 
@@ -664,9 +858,23 @@ function updateLabels() {
 }
 
 function animateAvatar(mesh, time) {
-    // Sleeping Logic for Companions
+    // Petting Jump
+    if (mesh.userData.jumpTime) {
+        const elapsed = (Date.now() - mesh.userData.jumpTime) / 1000;
+        if (elapsed < 0.5) {
+            mesh.position.y = Math.sin(elapsed * Math.PI * 2) * 0.5;
+        } else {
+            mesh.position.y = 0; // Reset
+            mesh.userData.jumpTime = null;
+        }
+    } else {
+        // Normal float
+        mesh.position.y = Math.sin(time * 2 + mesh.id) * 0.02;
+    }
+
+    // Sleeping Logic (Cow, Deer, Fox, Cat, Shiba)
     const animalType = mesh.userData.type;
-    if (animalType === 'cow' || animalType === 'deer' || animalType === 'fox') {
+    if (['cow', 'deer', 'fox', 'cat', 'shiba'].includes(animalType)) {
         if (mesh.userData.nextSleepCheck === undefined) {
             // Initialize: Start asleep with random offset for personality
             mesh.userData.isSleeping = true;
