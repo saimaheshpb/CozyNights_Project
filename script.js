@@ -354,6 +354,12 @@ function buildSky() {
         crater.position.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, 6.1);
         crater.rotation.x = Math.PI / 2; moonGroup.add(crater);
     }
+    // Add Glow Effect
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending });
+    moonGroup.add(new THREE.Mesh(new THREE.BoxGeometry(16, 16, 16), glowMat));
+    const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0x88bbff, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending });
+    moonGroup.add(new THREE.Mesh(new THREE.BoxGeometry(22, 22, 22), outerGlowMat));
+
     moonGroup.position.set(0, 25, -60); moonGroup.lookAt(0, 0, 0); scene.add(moonGroup);
 
     for (let i = 0; i < 15; i++) {
@@ -364,7 +370,7 @@ function buildSky() {
             const m = new THREE.Mesh(new THREE.BoxGeometry(7, 4, 5), cMat);
             m.position.set((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 8); cGroup.add(m);
         }
-        cGroup.position.set((Math.random() - 0.5) * 120, 14 + Math.random() * 6, -30 + (Math.random() - 0.5) * 80);
+        cGroup.position.set((Math.random() - 0.5) * 200, 14 + Math.random() * 6, -10 - Math.random() * 40);
         scene.add(cGroup); cloudParticles.push(cGroup);
     }
 
@@ -777,8 +783,8 @@ function animate() {
     snowParticles.forEach(p => p.update());
     // Clouds
     cloudParticles.forEach(p => {
-        p.position.z += 0.02; // Move clouds forward
-        if (p.position.z > 50) p.position.z = -50; // Loop clouds
+        p.position.x += 0.02; // Move clouds sideways
+        if (p.position.x > 100) p.position.x = -100; // Loop clouds
     });
     fireflyParticles.forEach(p => p.update(time));
 
@@ -1192,8 +1198,15 @@ function playDrumStep(step) {
 function playKick(t) { const osc = audioContext.createOscillator(); const gain = audioContext.createGain(); osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.5); gain.gain.setValueAtTime(0.5, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5); osc.connect(gain); gain.connect(musicMasterGain); osc.start(t); osc.stop(t + 0.5); }
 function playSnare(t) { const n = audioContext.createBuffer(1, audioContext.sampleRate * 0.2, audioContext.sampleRate); const d = n.getChannelData(0); for (let i = 0; i < n.length; i++) d[i] = Math.random() * 2 - 1; const src = audioContext.createBufferSource(); src.buffer = n; const g = audioContext.createGain(); const f = audioContext.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1000; g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.2); src.connect(f); f.connect(g); g.connect(musicMasterGain); src.start(t); }
 function playHat(t, v) { const n = audioContext.createBuffer(1, audioContext.sampleRate * 0.05, audioContext.sampleRate); const d = n.getChannelData(0); for (let i = 0; i < n.length; i++) d[i] = Math.random() * 2 - 1; const src = audioContext.createBufferSource(); src.buffer = n; const f = audioContext.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 5000; const g = audioContext.createGain(); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.05); src.connect(f); f.connect(g); g.connect(musicMasterGain); src.start(t); }
-function playMelody() { const notes = [329.63, 415.30, 493.88, 622.25, 277.18, 369.99]; if (Math.random() > 0.4) playChillNote(notes[Math.floor(Math.random() * notes.length)]); }
-function playChillNote(f) { const t = audioContext.currentTime; const osc = audioContext.createOscillator(); const g = audioContext.createGain(); osc.type = 'triangle'; osc.frequency.setValueAtTime(f, t); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.1); g.gain.exponentialRampToValueAtTime(0.001, t + 2); osc.connect(g); g.connect(musicMasterGain); osc.start(t); osc.stop(t + 2); }
+let melodyIndex = 0;
+const melodySequence = [329.63, 415.30, 493.88, 369.99, 415.30, 277.18, 329.63, 493.88];
+function playMelody() {
+    if (Math.random() > 0.2) {
+        playChillNote(melodySequence[melodyIndex]);
+        melodyIndex = (melodyIndex + 1) % melodySequence.length;
+    }
+}
+function playChillNote(f) { const t = audioContext.currentTime; const osc = audioContext.createOscillator(); const g = audioContext.createGain(); osc.type = 'triangle'; osc.frequency.setValueAtTime(f, t); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.1); g.gain.exponentialRampToValueAtTime(0.001, t + 4); osc.connect(g); g.connect(musicMasterGain); osc.start(t); osc.stop(t + 4); }
 
 // --- AI ---
 window.sendAiMessage = async function () {
